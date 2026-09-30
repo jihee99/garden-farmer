@@ -35,9 +35,11 @@
 ## 3. 프로젝트 구조
 
 ```
-sky-garden/
+garden-farmer/
+├─ proxy.ts                   # Next 16 proxy(구 middleware): 세션 갱신, 미로그인 리다이렉트
 ├─ app/
 │  ├─ onboarding/              # 컨셉 3장 → 홈 화면 추가 안내 → 로그인 → 알림 허용
+│  ├─ login/                   # 카카오 로그인 + (개발 환경) 테스트 계정 로그인
 │  ├─ auth/callback/           # 카카오 OAuth 코드 교환(PKCE) 후 세션 확정
 │  ├─ (app)/garden/            # 정원 홈  ?g=<gardenId>&m=YYYY-MM
 │  ├─ (app)/garden/[date]/     # 하루 상세 ?g=<gardenId>
@@ -59,17 +61,19 @@ sky-garden/
 │  │  ├─ compress.ts           # 긴 변 1600px, JPEG 0.8, EXIF 회전 보정
 │  │  ├─ dominant-color.ts     # 대표색 추출
 │  │  └─ color-name.ts         # 색 → "맑은 물빛" 등 이름
-│  ├─ supabase/                # client.ts, server.ts, middleware.ts
+│  ├─ supabase/                # client.ts, server.ts, proxy.ts, database.types.ts
 │  ├─ data/                    # 조회·RPC 래퍼(gardens, sky, month) + 에러 코드 → 한국어 문구
 │  └─ push/                    # 구독/해제
 ├─ public/sw.js                # push 수신, notificationclick, 앱 셸 캐시
 ├─ supabase/
 │  ├─ migrations/              # 테이블, RLS, RPC, 트리거, cron
 │  ├─ functions/send-sky-alert/
-│  ├─ tests/                   # pgTAP
-│  ├─ seed.sql                 # 개발용 테스트 계정·정원·샘플 기록
 │  └─ config.toml
-├─ tests/                      # Vitest 단위 테스트, Playwright 스모크
+├─ scripts/seed.ts             # 개발용 테스트 계정·정원·샘플 기록(admin API)
+├─ tests/
+│  ├─ unit/                    # Vitest 순수 로직
+│  ├─ db/                      # Vitest 통합: dev 프로젝트에 RPC·RLS 검증
+│  └─ e2e/                     # Playwright 스모크
 └─ docs/superpowers/specs/
 ```
 
@@ -172,7 +176,7 @@ daily_alerts (
 | `join_garden(code)` | 정원 행 `for update` 잠금 → 인원 확인 → 마지막 순서로 가입 | `invalid_code`, `garden_full`, `already_member` |
 | `leave_garden(garden_id)` | 내 plantings 삭제, 멤버 삭제, 남은 `petal_order` 1부터 재정렬. 마지막 멤버면 정원 삭제 | `cannot_leave_solo` |
 | `reorder_petals(garden_id, user_ids[])` | 배열이 현재 멤버 전원과 정확히 일치할 때만 순서 반영 | `not_member`, `invalid_order` |
-| `plant_sky(image_path, dominant_color, note, garden_ids[])` | 날짜는 서버가 `(now() at time zone 'Asia/Seoul')::date`로 결정. 오늘 사진이 없으면 생성, 있으면 **교체**(이미지·색·메모·taken_at 갱신). plantings를 `garden_ids`로 맞춤. 반환: photo_id, 교체된 예전 `image_path` | `not_member`, `no_gardens` |
+| `plant_sky(image_path, dominant_color, note, garden_ids[])` | 날짜는 서버가 `(now() at time zone 'Asia/Seoul')::date`로 결정. 오늘 사진이 없으면 생성, 있으면 **교체**(이미지·색·메모·taken_at 갱신). plantings를 `garden_ids`와 정확히 일치시킨다(교체 화면은 현재 심긴 정원을 미리 체크해 넘기므로 그대로 유지됨). 이미지 경로 첫 세그먼트는 본인 uid여야 함. 반환: photo_id, 교체된 예전 `image_path` | `not_member`, `no_gardens`, `invalid_path`, `invalid_color` |
 | `set_plantings(photo_id, garden_ids[])` | **오늘** 사진을 심을 정원을 추가·제거 | `not_owner`, `not_today`, `not_member` |
 | `unplant(photo_id, garden_id)` | 특정 정원에서만 내 하늘을 뺀다(지난 날 포함) | `not_owner` |
 | `delete_sky(photo_id)` | 하늘을 지운다(지난 날 포함). plantings는 cascade. 반환: `image_path` | `not_owner` |
@@ -189,7 +193,7 @@ daily_alerts (
 - `sky_photos`: 본인 것 또는 내가 속한 정원에 심어진 것만 조회.
 - `push_subscriptions`: 본인 것만 조회·추가·삭제.
 - `daily_alerts`: 로그인 사용자 조회 가능(카운트다운용).
-- Storage 버킷 `skies`(비공개):
+- Storage 버킷 `skies`(비공개, 5MB, `image/jpeg`·`image/png` — png는 개발 시드용):
   - insert: 경로 첫 세그먼트가 `auth.uid()`인 경우만.
   - select: `sky_photos` 조회 조건과 동일(image_path 조인).
   - delete: 본인 경로만.
@@ -270,7 +274,7 @@ daily_alerts (
   - `month-stats`: 피어난 꽃/다 함께 모인 날/돌멩이(오늘·미래 제외).
   - `dominant-color`: 합성 픽셀 데이터로 대표색 선택, 어두운 입력의 남색 보정.
   - `color-name`: 구간 경계.
-- **pgTAP (DB)**: 9명째 참여 거부, 다른 정원 사진 비가시, 오늘 교체 시 plantings 유지, 지난 날 심기 경로 없음, `reorder_petals` 검증, 나가기 시 순서 재정렬, 첫 로그인 트리거.
+- **Vitest DB 통합 테스트** (`tests/db`, dev 클라우드 프로젝트 대상. Docker가 없어 pgTAP 대신 사용): 테스트마다 admin API로 임시 사용자를 만들고 로그인한 클라이언트로 RPC·RLS를 검증한 뒤 삭제. 항목: 첫 로그인 트리거, 정원 인원 초과 참여 거부(2인 정원으로 검증, 크기는 2/8만 허용), 다른 정원 사진 비가시, 오늘 교체 시 plantings 유지, 지난 날 `set_plantings` 거부, `reorder_petals` 검증, 나가기 시 순서 재정렬.
 - **Playwright 스모크 1개**: 개발 로그인 → 테스트 이미지로 하늘 심기 → 오늘 칸에 꽃이 보임.
 
 ### 실기기 검증
@@ -278,9 +282,9 @@ iPhone은 로컬 Supabase에 접근할 수 없으므로 실기기 검증은 **Ve
 
 | 단계 | 완료 기준 |
 |---|---|
-| 1a 뼈대 | `npm run dev` 동작, 토큰·폰트 적용, manifest·서비스워커 등록, 로컬 Supabase 연결, 개발 로그인 성공 |
+| 1a 뼈대 | `npm run dev` 동작, 토큰·폰트 적용, manifest·서비스워커 등록, dev Supabase 연결, 개발 로그인 성공 |
 | 1b 실로그인 | 🔶 iPhone 홈 화면 PWA에서 카카오 로그인 후 세션 유지(실패 시 1회용 코드 방식으로 전환) |
-| 2 DB | 마이그레이션 적용, pgTAP 통과, 첫 로그인에 profile + solo 정원 생성, 시드 로드 |
+| 2 DB | 마이그레이션 적용, DB 통합 테스트 통과, 첫 로그인에 profile + solo 정원 생성, 시드 로드 |
 | 3 하늘 담기 | 압축·색 추출·업로드·심기·교체·삭제·정원 선택 변경 동작, 단위 테스트 통과. 🔶 iPhone 카메라 |
 | 4 정원 홈 | 월 조회, 꽃 렌더링, 하단 카드, 하루 상세, Realtime 반영, 스모크 테스트 통과 |
 | 5 그룹 | 정원 생성·코드 참여·8명 제한·전환·꽃잎 순서 변경·나가기 |
@@ -300,10 +304,13 @@ iPhone은 로컬 Supabase에 접근할 수 없으므로 실기기 검증은 **Ve
 | 알림 | pg_cron + Edge Function | + `daily_alerts.sent_at` 선점, `profiles.notify` |
 | 이미지 경로 | 미정 | `{uid}/{local_date}/{uuid}.jpg` |
 | 공유 카드 번짐 | blur | 카드 캡처용은 radial-gradient |
+| 개발 DB | (로컬 가정) | Docker 없이 dev 클라우드 프로젝트, prod와 분리 |
+| DB 테스트 | — | pgTAP 대신 Vitest 통합 테스트 |
+| 미들웨어 | middleware.ts | Next 16 `proxy.ts` |
 
 ## 부록 A. 외부 서비스 준비 (1b단계)
 
-1. **Supabase 클라우드 프로젝트** 생성(리전: Northeast Asia/Seoul). Project URL, anon key, service role key 확보. `supabase link` 후 `supabase db push`.
+1. **Supabase 프로덕션 프로젝트** 생성(리전: Northeast Asia/Seoul, dev 프로젝트와 별개). Project URL, publishable key, secret key 확보. `supabase link` 후 `supabase db push`.
 2. **카카오 Developers**
    - 애플리케이션 추가 → 앱 키의 REST API 키 확보.
    - 카카오 로그인 활성화, 보안 → Client Secret 생성·활성화.
@@ -312,12 +319,15 @@ iPhone은 로컬 Supabase에 접근할 수 없으므로 실기기 검증은 **Ve
    - 플랫폼 → Web 사이트 도메인에 Vercel 도메인 등록.
 3. **Supabase 대시보드** Auth → Providers → Kakao에 REST API 키 / Client Secret 등록. Auth → URL Configuration에 Vercel 도메인과 `/auth/callback` 추가.
 4. **VAPID 키**: `npx web-push generate-vapid-keys` → 공개키는 `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, 비공개키는 Edge Function 시크릿.
-5. **Vercel**: 저장소 연결, 환경변수(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`) 등록. `NEXT_PUBLIC_DEV_LOGIN`은 등록하지 않는다.
+5. **Vercel**: 저장소 연결, 환경변수(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`) 등록. `NEXT_PUBLIC_DEV_LOGIN`은 등록하지 않는다.
 6. **pg_cron / pg_net** 확장 활성화, cron 잡에서 쓸 Edge Function URL·서비스 키를 Vault에 저장.
 
-## 부록 B. 로컬 개발 환경
+## 부록 B. 개발 환경 (Docker 없음)
 
-- 필요: Node.js 20+, Docker Desktop, Supabase CLI.
-- `supabase start` → 로컬 URL/키를 `.env.local`에 기록, `NEXT_PUBLIC_DEV_LOGIN=true`.
-- `supabase db reset`으로 마이그레이션 + `seed.sql`(테스트 계정 5명, 나만의 정원/우리 둘/대학 동기, 이번 달 샘플 기록) 적용.
-- 시드 계정 비밀번호는 `seed.sql`과 `.env.example`에만 기록한다.
+- 필요: Node.js 20+(현재 22). Supabase CLI는 devDependency(`npx supabase`)로 사용.
+- Supabase 프로젝트를 **두 개** 둔다: `garden-farmer-dev`(개발·테스트 계정·통합 테스트), `garden-farmer`(프로덕션, 1b에서 생성). 테스트 계정이 실서비스 DB에 섞이지 않게 한다.
+- `.env.local`(커밋 안 함): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_DEV_LOGIN=true`, `DEV_SEED_PASSWORD`. 키 이름만 `.env.example`에 둔다.
+- 마이그레이션: `npx supabase link --project-ref <dev ref>` 후 `npx supabase db push`.
+- 시드: `npm run seed` → admin API로 테스트 계정 5명(나/서연/민재/하은/도윤), "우리 둘"·"대학 동기" 정원, 이번 달 샘플 기록 생성. 멱등.
+- 개발 로그인은 서버 액션이 `DEV_SEED_PASSWORD`로 로그인하므로 비밀번호가 클라이언트 번들에 들어가지 않는다.
+- 통합 테스트는 Auth 로그인 rate limit에 걸릴 수 있다. dev 프로젝트의 Auth → Rate Limits에서 로그인 한도를 넉넉히 올린다.
