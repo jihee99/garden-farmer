@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Gowun_Batang, Gowun_Dodum } from 'next/font/google'
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
 import './globals.css'
 
 const batang = Gowun_Batang({
@@ -32,7 +33,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko" className={`${batang.variable} ${dodum.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   )
 }
