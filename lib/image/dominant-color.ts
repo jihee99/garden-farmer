@@ -3,6 +3,7 @@ import { hslToRgb, rgbToHsl, toHex, type Hsl, type Rgb } from './color'
 const K = 3
 const ITERATIONS = 10
 const MIN_SHARE = 0.15
+const MAX_SAMPLES = 10_000
 const DARK_LIGHTNESS = 0.2
 const NAVY_HUE_RANGE: [number, number] = [220, 235]
 const NAVY_DEFAULT_HUE = 228
@@ -11,22 +12,25 @@ const NAVY_LIGHTNESS = 0.28
 
 type Cluster = { center: Rgb; count: number }
 
-/** 작게 줄인 이미지의 RGBA 픽셀에서 하늘 대표색을 대문자 #RRGGBB로 고른다. */
+/** 작게 줄인 이미지의 RGBA 픽셀에서 하늘 대표색을 대문자 #RRGGBB로 고른다. 점유율 15% 이상 군집 중 채도(크로마) 기준으로 가장 높은 것을 고른다. */
 export function dominantColor(rgba: Uint8ClampedArray): string {
   const pixels = opaquePixels(rgba)
   if (pixels.length === 0) return toNightNavy({ h: NAVY_DEFAULT_HUE, s: 0, l: 0 })
 
   const clusters = kMeans(pixels).filter((c) => c.count > 0)
   const large = clusters.filter((c) => c.count / pixels.length >= MIN_SHARE)
-  const candidates = large.length > 0 ? large : clusters
-  const best = candidates.reduce((a, b) => {
-    const sa = rgbToHsl(a.center).s
-    const sb = rgbToHsl(b.center).s
-    return sb > sa || (sb === sa && b.count > a.count) ? b : a
+  const best = large.reduce((a, b) => {
+    const ca = chroma(a.center)
+    const cb = chroma(b.center)
+    return cb > ca || (cb === ca && b.count > a.count) ? b : a
   })
 
   const hsl = rgbToHsl(best.center)
   return hsl.l < DARK_LIGHTNESS ? toNightNavy(hsl) : toHex(best.center)
+}
+
+function chroma([r, g, b]: Rgb): number {
+  return Math.max(r, g, b) - Math.min(r, g, b)
 }
 
 function opaquePixels(rgba: Uint8ClampedArray): Rgb[] {
@@ -34,7 +38,9 @@ function opaquePixels(rgba: Uint8ClampedArray): Rgb[] {
   for (let i = 0; i + 3 < rgba.length; i += 4) {
     if (rgba[i + 3] >= 128) out.push([rgba[i], rgba[i + 1], rgba[i + 2]])
   }
-  return out
+  if (out.length <= MAX_SAMPLES) return out
+  const stride = Math.ceil(out.length / MAX_SAMPLES)
+  return out.filter((_, i) => i % stride === 0)
 }
 
 function distance(a: Rgb, b: Rgb): number {

@@ -45,4 +45,12 @@ describe('dominantColor', () => {
     const { l } = rgbToHsl(fromHex(dominantColor(new Uint8ClampedArray())))
     expect(l).toBeCloseTo(0.28, 1)
   })
+
+  it('살짝 푸른 흰 구름 30%와 그림자 20%가 있어도 하늘색을 고른다', () => {
+    expect(dominantColor(pixels([[[127, 181, 221], 50], [[250, 252, 255], 30], [[3, 0, 1], 20]]))).toBe('#7FB5DD')
+  })
+
+  it('아주 큰 입력도 표본을 줄여 처리한다', () => {
+    expect(dominantColor(pixels([[[127, 181, 221], 200 * 200]]))).toBe('#7FB5DD')
+  })
 })
