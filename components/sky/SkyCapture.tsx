@@ -29,13 +29,17 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
   const [busy, setBusy] = useState<'reading' | 'planting' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    return () => {
-      if (captured) URL.revokeObjectURL(captured.previewUrl)
-    }
-  }, [captured])
+  // URL 값에 맞춰 해제한다. captured 객체 전체에 걸면 uploadedPath만 바뀌어도 화면에 쓰는 URL이 해제된다.
+  const previewUrl = captured?.previewUrl
+  useEffect(
+    () => () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    },
+    [previewUrl],
+  )
 
   async function onFile(file: File) {
+    if (busy !== null) return
     setError(null)
     setBusy('reading')
     try {
@@ -59,7 +63,8 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
       if (!path) {
         path = skyImagePath(userId, seoulDate())
         await uploadSkyImage(db, path, captured.blob)
-        setCaptured({ ...captured, uploadedPath: path })
+        // 그 사이 다시 찍은 사진을 덮어쓰지 않도록, 같은 사진일 때만 기록한다.
+        setCaptured((c) => (c && c.blob === captured.blob ? { ...c, uploadedPath: path } : c))
       }
       const { oldImagePath } = await plantSky(db, {
         imagePath: path,
@@ -96,7 +101,7 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
           <>
             {/* eslint-disable-next-line @next/next/no-img-element -- blob URL 미리보기 */}
             <img src={captured.previewUrl} alt="방금 찍은 하늘" className="h-full w-full object-cover" />
-            <RetakeInput onFile={onFile} />
+            <RetakeInput onFile={onFile} disabled={busy !== null} />
           </>
         ) : (
           <CaptureInputs onFile={onFile} busy={busy === 'reading'} />

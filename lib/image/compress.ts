@@ -17,22 +17,33 @@ export async function prepareSkyImage(file: File): Promise<PreparedSky> {
   }
   try {
     const full = fitWithin(bitmap.width, bitmap.height, MAX_SIDE)
-    const blob = await toJpeg(draw(bitmap, full.width, full.height))
-    const sample = fitWithin(bitmap.width, bitmap.height, COLOR_SAMPLE_SIDE)
-    const ctx = draw(bitmap, sample.width, sample.height)
-    return { blob, colorPixels: ctx.getImageData(0, 0, sample.width, sample.height).data }
+    const fullCtx = draw(bitmap, full.width, full.height)
+    const blob = await toJpeg(fullCtx)
+    // 색 표본은 원본 대신 이미 줄여 둔 캔버스에서 뽑는다(메모리·속도).
+    const sample = fitWithin(full.width, full.height, COLOR_SAMPLE_SIDE)
+    const sampleCtx = draw(fullCtx.canvas, sample.width, sample.height)
+    const colorPixels = sampleCtx.getImageData(0, 0, sample.width, sample.height).data
+    release(fullCtx)
+    release(sampleCtx)
+    return { blob, colorPixels }
   } finally {
     bitmap.close()
   }
 }
 
-function draw(bitmap: ImageBitmap, width: number, height: number): CanvasRenderingContext2D {
+/** 캔버스 백업 메모리를 바로 돌려준다. */
+function release(ctx: CanvasRenderingContext2D) {
+  ctx.canvas.width = 0
+  ctx.canvas.height = 0
+}
+
+function draw(source: CanvasImageSource, width: number, height: number): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new AppError('image_unreadable')
-  ctx.drawImage(bitmap, 0, 0, width, height)
+  ctx.drawImage(source, 0, 0, width, height)
   return ctx
 }
 
