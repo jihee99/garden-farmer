@@ -54,15 +54,21 @@ async function signIn(email: string): Promise<SupabaseClient> {
 }
 
 async function ensureGroup(owner: SupabaseClient, name: string, size: 2 | 8, joiners: SupabaseClient[]) {
-  const { data: existing } = await owner.from('gardens').select('id').eq('name', name).maybeSingle()
-  if (existing) return
-  const { data, error } = await owner.rpc('create_garden', { p_name: name, p_max_members: size })
-  if (error) throw error
-  for (const j of joiners) {
-    const { error: joinError } = await j.rpc('join_garden', { p_code: data.invite_code })
-    if (joinError) throw joinError
+  const { data: existing, error: findError } = await owner.from('gardens').select('id, invite_code').eq('name', name).maybeSingle()
+  if (findError) throw findError
+  let inviteCode: string
+  if (existing) {
+    inviteCode = existing.invite_code
+  } else {
+    const { data, error } = await owner.rpc('create_garden', { p_name: name, p_max_members: size })
+    if (error) throw error
+    inviteCode = data.invite_code
+    console.log(`정원 생성: ${name}`)
   }
-  console.log(`정원 생성: ${name}`)
+  for (const j of joiners) {
+    const { error: joinError } = await j.rpc('join_garden', { p_code: inviteCode })
+    if (joinError && !joinError.message.includes('already_member')) throw joinError
+  }
 }
 
 async function seedHistory(userIds: string[]) {
@@ -70,9 +76,10 @@ async function seedHistory(userIds: string[]) {
   const todayDay = Number(today.slice(8))
   const monthPrefix = today.slice(0, 8)
 
-  await admin.storage
+  const { error: uploadError } = await admin.storage
     .from('skies')
     .upload(SEED_IMAGE, gradientPng(360, 480, [156, 195, 228], [242, 205, 187]), { contentType: 'image/png', upsert: true })
+  if (uploadError) throw uploadError
 
   const rows: { user_id: string; local_date: string; taken_at: string; image_path: string; dominant_color: string }[] = []
   userIds.forEach((userId, m) => {

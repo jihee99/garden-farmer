@@ -1,10 +1,12 @@
+import { redirect } from 'next/navigation'
 import { signOut } from '@/lib/auth/actions'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function GardenPage() {
   const supabase = await createClient()
   const { data: auth } = await supabase.auth.getClaims()
-  const uid = auth?.claims.sub as string
+  const uid = auth?.claims.sub
+  if (!uid) redirect('/login')
 
   const [{ data: profile }, { data: gardens }] = await Promise.all([
     supabase.from('profiles').select('nickname').eq('id', uid).single(),

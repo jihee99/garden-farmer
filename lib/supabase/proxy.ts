@@ -3,6 +3,19 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 const PUBLIC_PREFIXES = ['/login', '/auth', '/manifest.webmanifest', '/sw.js', '/icons', '/icon', '/apple-icon']
 
+function redirectTo(request: NextRequest, response: NextResponse, pathname: string) {
+  const url = request.nextUrl.clone()
+  url.pathname = pathname
+  url.search = ''
+  const redirect = NextResponse.redirect(url)
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie))
+  ;['Cache-Control', 'Expires', 'Pragma'].forEach((name) => {
+    const value = response.headers.get(name)
+    if (value) redirect.headers.set(name, value)
+  })
+  return redirect
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
@@ -31,16 +44,10 @@ export async function updateSession(request: NextRequest) {
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 
   if (!signedIn && !isPublic) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.search = ''
-    return NextResponse.redirect(url)
+    return redirectTo(request, response, '/login')
   }
   if (signedIn && pathname === '/login') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/garden'
-    url.search = ''
-    return NextResponse.redirect(url)
+    return redirectTo(request, response, '/garden')
   }
   return response
 }
