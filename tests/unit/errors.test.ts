@@ -18,6 +18,11 @@ describe('errors', () => {
     expect(e.userMessage).toBe('이 정원의 멤버가 아니에요.')
   })
 
+  it('toAppError는 원본 에러를 cause로 보존한다', () => {
+    const original = { message: 'not_member' }
+    expect(toAppError(original).cause).toBe(original)
+  })
+
   it('userMessageOf: AppError가 아니면 기본 문구', () => {
     expect(userMessageOf(new AppError('upload_failed'))).toBe('사진을 올리지 못했어요. 다시 시도해 주세요.')
     expect(userMessageOf(new TypeError('Failed to fetch'))).toBe('잠시 문제가 생겼어요. 다시 시도해 주세요.')

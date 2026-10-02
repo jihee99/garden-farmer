@@ -10,7 +10,7 @@ export function skyImagePath(userId: string, localDate: string, ext: 'jpg' | 'pn
 
 export async function uploadSkyImage(db: DbClient, path: string, image: Blob): Promise<void> {
   const { error } = await db.storage.from(SKY_BUCKET).upload(path, image, { contentType: image.type || 'image/jpeg' })
-  if (error) throw new AppError('upload_failed')
+  if (error) throw new AppError('upload_failed', { cause: error })
 }
 
 export type PlantSkyInput = { imagePath: string; color: string; note: string | null; gardenIds: string[] }
@@ -42,11 +42,20 @@ export async function deleteSky(db: DbClient, photoId: string): Promise<string> 
 /** 더 이상 쓰이지 않는 사진 파일을 지운다. 실패해도 사용자 흐름은 막지 않는다(고아 파일 허용). */
 export async function removeSkyImage(db: DbClient, path: string | null): Promise<void> {
   if (!path) return
-  await db.storage.from(SKY_BUCKET).remove([path])
+  try {
+    const { error } = await db.storage.from(SKY_BUCKET).remove([path])
+    if (error) console.warn('[sky] 사진 파일 삭제 실패', path, error)
+  } catch (err) {
+    console.warn('[sky] 사진 파일 삭제 실패', path, err)
+  }
 }
 
 export async function signedSkyUrl(db: DbClient, path: string): Promise<string | null> {
-  const { data } = await db.storage.from(SKY_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS)
+  const { data, error } = await db.storage.from(SKY_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS)
+  if (error) {
+    console.warn('[sky] signed URL 실패', path, error)
+    return null
+  }
   return data?.signedUrl ?? null
 }
 

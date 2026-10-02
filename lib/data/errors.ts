@@ -29,8 +29,8 @@ export function messageFor(code: string): string {
 export class AppError extends Error {
   readonly code: string
 
-  constructor(code: string) {
-    super(code)
+  constructor(code: string, options?: { cause?: unknown }) {
+    super(code, options)
     this.name = 'AppError'
     this.code = code
   }
@@ -41,7 +41,7 @@ export class AppError extends Error {
 }
 
 export function toAppError(error: { message: string }): AppError {
-  return new AppError(error.message)
+  return new AppError(error.message, { cause: error })
 }
 
 export function userMessageOf(error: unknown): string {

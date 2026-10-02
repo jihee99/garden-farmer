@@ -54,7 +54,7 @@ describe('lib/data 하늘 래퍼', () => {
     expect(await getTodaySky(me.client, me.id, today)).toBeNull()
 
     const path = skyImagePath(me.id, today, 'png')
-    expect(path).toMatch(new RegExp(`^${me.id}/${today}/[0-9a-f-]{36}\.png$`))
+    expect(path).toMatch(new RegExp(`^${me.id}/${today}/[0-9a-f-]{36}\\.png$`))
     await uploadSkyImage(me.client, path, skyBlob())
     trackUpload(path)
 
