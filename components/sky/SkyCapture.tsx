@@ -5,7 +5,15 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { userMessageOf } from '@/lib/data/errors'
 import type { GardenOption } from '@/lib/data/gardens'
-import { plantSky, removeSkyImage, skyImagePath, uploadSkyImage } from '@/lib/data/sky'
+import {
+  deleteSky,
+  plantSky,
+  removeSkyImage,
+  setPlantings,
+  skyImagePath,
+  uploadSkyImage,
+  type TodaySky,
+} from '@/lib/data/sky'
 import { seoulDate } from '@/lib/domain/date'
 import { useOnline } from '@/lib/hooks/use-online'
 import { prepareSkyImage } from '@/lib/image/compress'
@@ -16,17 +24,28 @@ import { CaptureInputs, RetakeInput } from './CaptureInputs'
 import { GardenChecklist } from './GardenChecklist'
 import { SkyColorChip } from './SkyColorChip'
 
-type Props = { userId: string; gardens: GardenOption[]; alertAt: string | null }
+type Props = {
+  userId: string
+  gardens: GardenOption[]
+  alertAt: string | null
+  todaySky: TodaySky | null
+  todayImageUrl: string | null
+}
 
 type Captured = { blob: Blob; previewUrl: string; color: string; uploadedPath: string | null }
+type Busy = 'reading' | 'planting' | 'saving' | 'deleting' | null
 
-export function SkyCapture({ userId, gardens, alertAt }: Props) {
+function sameSet(a: string[], b: string[]) {
+  return a.length === b.length && a.every((x) => b.includes(x))
+}
+
+export function SkyCapture({ userId, gardens, alertAt, todaySky, todayImageUrl }: Props) {
   const router = useRouter()
   const online = useOnline()
   const [captured, setCaptured] = useState<Captured | null>(null)
-  const [selected, setSelected] = useState<string[]>(() => gardens.map((g) => g.id))
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState<'reading' | 'planting' | null>(null)
+  const [selected, setSelected] = useState<string[]>(() => todaySky?.gardenIds ?? gardens.map((g) => g.id))
+  const [note, setNote] = useState(todaySky?.note ?? '')
+  const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
 
   // URL 값에 맞춰 해제한다. captured 객체 전체에 걸면 uploadedPath만 바뀌어도 화면에 쓰는 URL이 해제된다.
@@ -38,26 +57,30 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
     [previewUrl],
   )
 
-  async function onFile(file: File) {
-    if (busy !== null) return
+  async function run(kind: Exclude<Busy, null>, task: () => Promise<void>) {
     setError(null)
-    setBusy('reading')
+    setBusy(kind)
     try {
-      const { blob, colorPixels } = await prepareSkyImage(file)
-      setCaptured({ blob, previewUrl: URL.createObjectURL(blob), color: dominantColor(colorPixels), uploadedPath: null })
+      await task()
     } catch (e) {
       setError(userMessageOf(e))
-    } finally {
       setBusy(null)
     }
   }
 
-  async function plant() {
+  function onFile(file: File) {
+    if (busy !== null) return
+    void run('reading', async () => {
+      const { blob, colorPixels } = await prepareSkyImage(file)
+      setCaptured({ blob, previewUrl: URL.createObjectURL(blob), color: dominantColor(colorPixels), uploadedPath: null })
+      setBusy(null)
+    })
+  }
+
+  function plant() {
     if (!captured) return
-    setError(null)
-    setBusy('planting')
-    const db = createClient()
-    try {
+    void run('planting', async () => {
+      const db = createClient()
       // 업로드는 됐는데 심기에 실패한 경우, 다시 시도할 때 같은 파일을 재사용한다.
       let path = captured.uploadedPath
       if (!path) {
@@ -75,13 +98,33 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
       await removeSkyImage(db, oldImagePath)
       router.push('/garden')
       router.refresh()
-    } catch (e) {
-      setError(userMessageOf(e))
-      setBusy(null)
-    }
+    })
   }
 
+  function saveGardens() {
+    if (!todaySky) return
+    void run('saving', async () => {
+      await setPlantings(createClient(), todaySky.id, selected)
+      router.refresh()
+      setBusy(null)
+    })
+  }
+
+  function removeToday() {
+    if (!todaySky || !window.confirm('오늘 하늘을 지울까요? 모든 정원에서 내 꽃잎이 비어요.')) return
+    void run('deleting', async () => {
+      const db = createClient()
+      const path = await deleteSky(db, todaySky.id)
+      await removeSkyImage(db, path)
+      router.refresh()
+    })
+  }
+
+  const viewingToday = todaySky !== null && captured === null
+  const shownColor = captured?.color ?? todaySky?.color ?? null
   const canPlant = captured !== null && busy === null && online && selected.length > 0
+  const canSave =
+    viewingToday && busy === null && online && selected.length > 0 && !sameSet(selected, todaySky.gardenIds)
 
   return (
     <main className="flex min-h-dvh flex-col gap-[18px] px-5 pb-7 pt-13">
@@ -103,26 +146,39 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
             <img src={captured.previewUrl} alt="방금 찍은 하늘" className="h-full w-full object-cover" />
             <RetakeInput onFile={onFile} disabled={busy !== null} />
           </>
+        ) : viewingToday ? (
+          <>
+            {todayImageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- 1시간짜리 signed URL
+              <img src={todayImageUrl} alt="오늘 심은 하늘" className="h-full w-full object-cover" />
+            )}
+            <RetakeInput onFile={onFile} disabled={busy !== null} />
+          </>
         ) : (
           <CaptureInputs onFile={onFile} busy={busy === 'reading'} />
         )}
       </section>
 
-      {captured && (
+      {shownColor && <SkyColorChip color={shownColor} />}
+
+      {(captured || viewingToday) && (
         <>
-          <SkyColorChip color={captured.color} />
           <GardenChecklist gardens={gardens} selected={selected} onChange={setSelected} />
-          <label className="flex flex-col gap-1.5 text-sm text-muted">
-            한 줄 남기기 (선택)
-            <input
-              type="text"
-              maxLength={60}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="점심 먹고 올려다본 하늘"
-              className="h-[46px] rounded-[14px] border border-[#DCD2C1] bg-[#FFFDF8] px-3.5 text-[15px] text-ink"
-            />
-          </label>
+          {captured ? (
+            <label className="flex flex-col gap-1.5 text-sm text-muted">
+              한 줄 남기기 (선택)
+              <input
+                type="text"
+                maxLength={60}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="점심 먹고 올려다본 하늘"
+                className="h-[46px] rounded-[14px] border border-[#DCD2C1] bg-[#FFFDF8] px-3.5 text-[15px] text-ink"
+              />
+            </label>
+          ) : (
+            todaySky?.note && <p className="text-[15px] text-ink">“{todaySky.note}”</p>
+          )}
         </>
       )}
 
@@ -137,14 +193,35 @@ export function SkyCapture({ userId, gardens, alertAt }: Props) {
         </p>
       )}
 
-      <button
-        type="button"
-        onClick={plant}
-        disabled={!canPlant}
-        className="mt-auto h-[54px] shrink-0 rounded-full bg-sky-deep text-[17px] text-white shadow-[0_6px_18px_rgba(79,114,153,.3)] disabled:opacity-50"
-      >
-        {busy === 'planting' ? '심는 중…' : '하늘 심기'}
-      </button>
+      {viewingToday ? (
+        <div className="mt-auto flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={saveGardens}
+            disabled={!canSave}
+            className="h-[54px] rounded-full bg-sky-deep text-[17px] text-white shadow-[0_6px_18px_rgba(79,114,153,.3)] disabled:opacity-50"
+          >
+            {busy === 'saving' ? '저장 중…' : '정원 바꾸기 저장'}
+          </button>
+          <button
+            type="button"
+            onClick={removeToday}
+            disabled={busy !== null || !online}
+            className="h-11 text-sm text-muted underline disabled:opacity-50"
+          >
+            {busy === 'deleting' ? '지우는 중…' : '하늘 지우기'}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={plant}
+          disabled={!canPlant}
+          className="mt-auto h-[54px] shrink-0 rounded-full bg-sky-deep text-[17px] text-white shadow-[0_6px_18px_rgba(79,114,153,.3)] disabled:opacity-50"
+        >
+          {busy === 'planting' ? '심는 중…' : '하늘 심기'}
+        </button>
+      )}
     </main>
   )
 }
