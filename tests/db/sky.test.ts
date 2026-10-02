@@ -40,9 +40,11 @@ describe('하늘 RPC와 Storage', () => {
     a = await createTestUser('에이')
     b = await createTestUser('비')
     outsider = await createTestUser('남')
-    const { data } = await a.client.rpc('create_garden', { p_name: '같은 하늘', p_max_members: 2 })
-    shared = (data as { id: string; invite_code: string }).id
-    await b.client.rpc('join_garden', { p_code: (data as { invite_code: string }).invite_code })
+    const { data, error } = await a.client.rpc('create_garden', { p_name: '같은 하늘', p_max_members: 2 })
+    if (error) throw error
+    shared = data.id
+    const { error: joinError } = await b.client.rpc('join_garden', { p_code: data.invite_code })
+    if (joinError) throw joinError
     aSolo = await soloGardenId(a)
   })
   afterAll(cleanupTestUsers)
@@ -71,6 +73,21 @@ describe('하늘 RPC와 Storage', () => {
     await expectRpcError(a.client.rpc('plant_sky', { ...base, p_garden_ids: [await soloGardenId(b)] }), 'not_member')
     await expectRpcError(a.client.rpc('plant_sky', { ...base, p_image_path: `${b.id}/${today}/x.png` }), 'invalid_path')
     await expectRpcError(a.client.rpc('plant_sky', { ...base, p_color: 'blue' }), 'invalid_color')
+  })
+
+  it('plant_sky: 경로는 본인/오늘/uuid.확장자만, 메모는 60자까지', async () => {
+    const good = await upload(a)
+    const base = { p_image_path: good, p_color: '#9CC3E4', p_note: null, p_garden_ids: [aSolo] }
+    await expectRpcError(
+      a.client.rpc('plant_sky', { ...base, p_image_path: `${a.id}/${yesterday}/${crypto.randomUUID()}.png` }),
+      'invalid_path',
+    )
+    await expectRpcError(a.client.rpc('plant_sky', { ...base, p_image_path: `${a.id}/${today}/x.png` }), 'invalid_path')
+    await expectRpcError(
+      a.client.rpc('plant_sky', { ...base, p_image_path: `${a.id}/${today}/${crypto.randomUUID()}.gif` }),
+      'invalid_path',
+    )
+    await expectRpcError(a.client.rpc('plant_sky', { ...base, p_note: '가'.repeat(61) }), 'invalid_note')
   })
 
   it('plant_sky: 같은 날 다시 심으면 같은 사진을 교체하고 예전 경로를 돌려준다', async () => {
