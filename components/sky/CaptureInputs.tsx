@@ -36,7 +36,7 @@ export function RetakeInput({ onFile, label = '다시 찍기', disabled = false 
       className={`absolute bottom-3.5 right-4 flex min-h-11 cursor-pointer items-center rounded-xl bg-[rgb(255_253_248/0.78)] px-3 text-[13px] text-ink${disabled ? ' opacity-50' : ''}`}
     >
       {label}
-      <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={pick(onFile)} disabled={disabled} />
+      <input type="file" accept="image/*" className="sr-only" onChange={pick(onFile)} disabled={disabled} />
     </label>
   )
 }

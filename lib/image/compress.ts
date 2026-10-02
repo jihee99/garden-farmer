@@ -13,7 +13,13 @@ export async function prepareSkyImage(file: File): Promise<PreparedSky> {
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
   } catch {
-    throw new AppError('image_unreadable')
+    // 구형 WebKit은 알 수 없는 enum 값에 TypeError를 던질 수 있다.
+    // 옵션 없이 다시 시도하면 EXIF 방향이 기본 적용된다.
+    try {
+      bitmap = await createImageBitmap(file)
+    } catch (e) {
+      throw new AppError('image_unreadable', { cause: e })
+    }
   }
   try {
     const full = fitWithin(bitmap.width, bitmap.height, MAX_SIDE)

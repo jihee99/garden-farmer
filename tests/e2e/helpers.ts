@@ -28,8 +28,12 @@ export async function clearTodaySky(uid: string) {
     .eq('local_date', seoulDate())
   if (error) throw error
   for (const photo of data) {
-    await admin.from('sky_photos').delete().eq('id', photo.id)
-    if (photo.image_path.startsWith(`${uid}/`)) await admin.storage.from('skies').remove([photo.image_path])
+    const { error: deleteError } = await admin.from('sky_photos').delete().eq('id', photo.id)
+    if (deleteError) throw deleteError
+    if (photo.image_path.startsWith(`${uid}/`)) {
+      const { error: removeError } = await admin.storage.from('skies').remove([photo.image_path])
+      if (removeError) throw removeError
+    }
   }
 }
 

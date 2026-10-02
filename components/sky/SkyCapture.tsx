@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { userMessageOf } from '@/lib/data/errors'
+import { AppError, userMessageOf } from '@/lib/data/errors'
 import type { GardenOption } from '@/lib/data/gardens'
 import {
   deleteSky,
@@ -63,6 +63,7 @@ export function SkyCapture({ userId, gardens, alertAt, todaySky, todayImageUrl }
     try {
       await task()
     } catch (e) {
+      if (!(e instanceof AppError)) console.error('[sky] 예상하지 못한 오류', e)
       setError(userMessageOf(e))
       setBusy(null)
     }
