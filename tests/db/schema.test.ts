@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { cleanupTestUsers, createTestUser, type TestUser } from './helpers'
+import { admin, cleanupTestUsers, createTestUser, type TestUser } from './helpers'
 
 describe('가입 부트스트랩과 기본 RLS', () => {
   let a: TestUser
@@ -48,5 +48,7 @@ describe('가입 부트스트랩과 기본 RLS', () => {
 
     const { data: others } = await a.client.from('profiles').update({ nickname: '해킹' }).eq('id', b.id).select()
     expect(others ?? []).toEqual([])
+    const { data: bRow } = await admin.from('profiles').select('nickname').eq('id', b.id).single()
+    expect(bRow?.nickname).toBe('비')
   })
 })

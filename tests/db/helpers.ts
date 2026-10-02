@@ -37,15 +37,22 @@ export function trackUpload(path: string) {
   uploadedPaths.push(path)
 }
 
-export async function cleanupTestUsers() {
-  if (uploadedPaths.length) await admin.storage.from('skies').remove(uploadedPaths.splice(0))
-  const ids = createdUserIds.splice(0)
-  if (!ids.length) return
-  await admin.from('gardens').delete().in('created_by', ids)
-  for (const id of ids) {
-    const { error } = await admin.auth.admin.deleteUser(id)
-    if (error) throw error
+export async function cleanupTestUsers(): Promise<void> {
+  const errors: string[] = []
+  if (uploadedPaths.length) {
+    const { error } = await admin.storage.from('skies').remove(uploadedPaths.splice(0))
+    if (error) errors.push(`uploads: ${error.message}`)
   }
+  const ids = createdUserIds.splice(0)
+  if (ids.length) {
+    const { error } = await admin.from('gardens').delete().in('created_by', ids)
+    if (error) errors.push(`gardens: ${error.message}`)
+    for (const id of ids) {
+      const { error: userError } = await admin.auth.admin.deleteUser(id)
+      if (userError) errors.push(`user ${id}: ${userError.message}`)
+    }
+  }
+  if (errors.length) throw new Error(`cleanup failed:\n${errors.join('\n')}`)
 }
 
 export async function expectRpcError(
