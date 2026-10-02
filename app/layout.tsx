@@ -7,6 +7,7 @@ const batang = Gowun_Batang({
   weight: ['400', '700'],
   subsets: ['latin'],
   variable: '--font-gowun-batang',
+  preload: false,
   display: 'swap',
 })
 
@@ -14,6 +15,7 @@ const dodum = Gowun_Dodum({
   weight: '400',
   subsets: ['latin'],
   variable: '--font-gowun-dodum',
+  preload: false,
   display: 'swap',
 })
 
