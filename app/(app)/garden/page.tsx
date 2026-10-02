@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { signOut } from '@/lib/auth/actions'
 import { createClient } from '@/lib/supabase/server'
@@ -16,6 +17,12 @@ export default async function GardenPage() {
   return (
     <main className="flex min-h-dvh flex-col gap-6 px-5 pt-13">
       <h1 className="font-serif text-2xl font-bold">{profile?.nickname}님의 정원</h1>
+      <Link
+        href="/sky"
+        className="flex h-[54px] items-center justify-center rounded-full bg-sky-deep text-[17px] text-white shadow-[0_6px_18px_rgba(79,114,153,.3)]"
+      >
+        하늘 담기
+      </Link>
       <ul className="flex flex-col gap-2">
         {gardens?.map((g) => (
           <li key={g.id} className="flex min-h-11 items-center justify-between rounded-2xl border border-line bg-card px-4">
