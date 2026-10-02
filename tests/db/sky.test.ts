@@ -147,4 +147,22 @@ describe('하늘 RPC와 Storage', () => {
       .upload(`${a.id}/${today}/intrude.png`, gradientPng(2, 2, [0, 0, 0], [0, 0, 0]), { contentType: 'image/png' })
     expect(error).not.toBeNull()
   })
+  it('plant_sky: 같은 날 동시에 두 번 심어도 에러 코드 없이 한 장만 남는다', async () => {
+    const c = await createTestUser('씨')
+    const cSolo = await soloGardenId(c)
+    const [p1, p2] = [await upload(c), await upload(c)]
+    const args = (path: string) => ({ p_image_path: path, p_color: '#9CC3E4', p_note: null, p_garden_ids: [cSolo] })
+    const [r1, r2] = await Promise.all([c.client.rpc('plant_sky', args(p1)), c.client.rpc('plant_sky', args(p2))])
+    expect(r1.error).toBeNull()
+    expect(r2.error).toBeNull()
+    const id1 = (r1.data as { photo_id: string }[])[0].photo_id
+    const id2 = (r2.data as { photo_id: string }[])[0].photo_id
+    expect(id1).toBe(id2)
+    const { data: rows } = await c.client.from('sky_photos').select('id').eq('local_date', today)
+    expect(rows).toHaveLength(1)
+  })
+
+  it('get_month: 정원이 null이면 not_member', async () => {
+    await expectRpcError(a.client.rpc('get_month', { p_garden: null, p_month: today.slice(0, 7) }), 'not_member')
+  })
 })
