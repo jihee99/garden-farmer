@@ -264,7 +264,50 @@ export type Database = {
     }
     Functions: {
       can_see_photo: { Args: { p: string }; Returns: boolean }
+      create_garden: {
+        Args: { p_max_members: number; p_name: string }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          id: string
+          invite_code: string | null
+          kind: string
+          max_members: number
+          name: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "gardens"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      gen_invite_code: { Args: never; Returns: string }
       is_member: { Args: { g: string }; Returns: boolean }
+      join_garden: {
+        Args: { p_code: string }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          id: string
+          invite_code: string | null
+          kind: string
+          max_members: number
+          name: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "gardens"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      leave_garden: { Args: { p_garden: string }; Returns: undefined }
+      renumber_petals: { Args: { p_garden: string }; Returns: undefined }
+      reorder_petals: {
+        Args: { p_garden: string; p_user_ids: string[] }
+        Returns: undefined
+      }
       seoul_today: { Args: never; Returns: string }
       shares_garden: { Args: { other: string }; Returns: boolean }
     }
